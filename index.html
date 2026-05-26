@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>おねがい</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #fdf2f8; /* 薄いピンク背景 */
+            overflow: hidden; /* ボタンが画面外に出たときのスクロールを防ぐ */
+            touch-action: none; /* スマホでのスワイプなどの誤作動を防ぐ */
+        }
+        
+        /* 逃げるボタン用のアニメーション設定 */
+        #btn-no {
+            transition: top 0.2s ease-out, left 0.2s ease-out;
+            z-index: 1000;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="text-gray-800 min-h-screen flex flex-col relative">
+
+    <main id="app-container" class="flex-grow flex items-center justify-center p-4 w-full h-full relative">
+        </main>
+
+    <script>
+        // ==========================================
+        //   設定項目
+        // ==========================================
+        // 1. FormspreeのEndpoint URLをここに貼り付けます
+        // 例: "https://formspree.io/f/xabcdabc"
+        const FORMSPREE_ENDPOINT = "https://formspree.io/f/xqejynrl"; 
+
+        // 2. 管理画面へアクセスするためのパスワード
+        const ADMIN_PASSWORD = "admin"; 
+        
+        const STORAGE_KEY = "joke_app_config";
+
+        // アプリの基本設定（管理画面で変更可能）
+        let config = {
+            question: "今週末、スタバ奢ってくれる？",
+            yesText: "いいよ！",
+            noText: "いやだ！",
+            successMessage: "やったー！\n約束だからね！楽しみに待ってるね",
+            emailSubject: "【朗報】{name} さんが奢ってくれるそうです！"
+        };
+
+        // 回答者の名前を保持する変数
+        let respondentName = "";
+
+        // ==========================================
+        // 初期化処理
+        // ==========================================
+        function init() {
+            loadConfig();
+            
+            // URLパラメータで画面を出し分ける (?mode=admin)
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('mode') === 'admin') {
+                requestAdminAccess();
+            } else {
+                // 通常モード：まずは名前入力画面を表示
+                renderNameInputScreen();
+            }
+        }
+
+        // 設定の読み込みと保存
+        function loadConfig() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                config = JSON.parse(saved);
+            }
+        }
+
+        function saveConfig() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+            alert("設定を保存しました！");
+        }
+
+        // ==========================================
+        // 通常モードの画面フロー
+        // ==========================================
+
+        // 1. 名前入力画面
+        function renderNameInputScreen() {
+            const container = document.getElementById('app-container');
+            container.innerHTML = `
+                <div class="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center fade-in border-4 border-pink-200">
+                    <h2 class="text-2xl font-bold mb-6 text-pink-500">あなたの名前をおしえて！</h2>
+                    <form onsubmit="startJoke(event)">
+                        <input type="text" id="user-name" required placeholder="なまえ" 
+                            class="w-full text-center text-xl p-3 border-2 border-pink-200 rounded-xl mb-6 focus:outline-none focus:border-pink-500 bg-pink-50">
+                        <button type="submit" class="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold text-xl py-3 px-8 rounded-full shadow-lg transition transform hover:scale-105">
+                            次へ
+                        </button>
+                    </form>
+                </div>
+            `;
+        }
+
+        // 名前入力後の処理
+        function startJoke(e) {
+            e.preventDefault();
+            const nameInput = document.getElementById('user-name').value;
+            if (nameInput.trim() === "") return;
+            
+            respondentName = nameInput;
+            renderJokeScreen();
+        }
+
+        // 2. ジョーク（おねだり）画面
+        function renderJokeScreen() {
+            const container = document.getElementById('app-container');
+            container.innerHTML = `
+                <div class="text-center w-full max-w-2xl px-4 fade-in">
+                    <p class="text-xl text-gray-500 mb-2">${escapeHTML(respondentName)} さんへ</p>
+                    <h1 class="text-3xl md:text-5xl font-bold mb-12 text-gray-800 leading-tight">
+                        ${escapeHTML(config.question).replace(/\n/g, '<br>')}
+                    </h1>
+                    
+                    <div class="flex flex-col md:flex-row justify-center items-center gap-6 mt-10 relative h-32" id="button-area">
+                        <button id="btn-yes" onclick="submitYes()" class="bg-pink-500 hover:bg-pink-600 text-white font-bold text-2xl py-4 px-12 rounded-full shadow-[0_8px_0_#be185d] active:shadow-[0_0px_0_#be185d] active:translate-y-2 transition-all">
+                            ${escapeHTML(config.yesText)}
+                        </button>
+                        
+                        <button id="btn-no" class="bg-gray-400 text-white font-bold text-xl py-4 px-12 rounded-full shadow-[0_6px_0_#9ca3af]">
+                            ${escapeHTML(config.noText)}
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // 逃げるイベントの設定
+            const btnNo = document.getElementById('btn-no');
+            
+            // PCのマウスオーバーとスマホのタップ両方に反応させる
+            btnNo.addEventListener('mouseenter', dodgeButton);
+            btnNo.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // タップそのものを無効化
+                dodgeButton();
+            });
+        }
+
+        // ボタンが逃げるロジック
+        function dodgeButton() {
+            const btn = document.getElementById('btn-no');
+            
+            // 最初に逃げる時、レイアウト崩れを防ぐためにfixedに切り替える
+            if (btn.style.position !== 'fixed') {
+                const rect = btn.getBoundingClientRect();
+                btn.style.position = 'fixed';
+                btn.style.left = rect.left + 'px';
+                btn.style.top = rect.top + 'px';
+                btn.style.margin = '0';
+            }
+
+            // 画面の幅と高さ
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            
+            // ボタンの幅と高さ
+            const btnWidth = btn.offsetWidth;
+            const btnHeight = btn.offsetHeight;
+
+            // 画面外に飛び出さないための安全マージン
+            const safeMargin = 20;
+
+            // 移動可能な最大座標
+            const maxX = windowWidth - btnWidth - safeMargin;
+            const maxY = windowHeight - btnHeight - safeMargin;
+
+            // ランダムな新しい座標（最低でもマージン分は内側にする）
+            const newX = Math.max(safeMargin, Math.floor(Math.random() * maxX));
+            const newY = Math.max(safeMargin, Math.floor(Math.random() * maxY));
+
+            // ボタンを移動
+            btn.style.left = newX + 'px';
+            btn.style.top = newY + 'px';
+        }
+
+        // 3. 「いいよ！」を押した時の送信処理
+        function submitYes() {
+            // ボタンを無効化して連打防止
+            document.getElementById('btn-yes').disabled = true;
+            document.getElementById('btn-yes').innerText = "送信中...";
+
+            if (FORMSPREE_ENDPOINT) {
+                const formData = new FormData();
+                const subject = config.emailSubject.replace('{name}', respondentName);
+                
+                formData.append("お名前", respondentName);
+                formData.append("回答", config.yesText);
+                formData.append("質問内容", config.question);
+                formData.append("_subject", subject); // Formspreeの件名指定機能
+
+                fetch(FORMSPREE_ENDPOINT, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'Accept': 'application/json' }
+                })
+                .then(response => {
+                    renderSuccessScreen();
+                })
+                .catch(error => {
+                    console.error("Error:", error);
+                    renderSuccessScreen(); // エラーでもとりあえず成功画面は出す
+                });
+            } else {
+                // FormspreeのURLが設定されていない場合はシミュレーション
+                console.log(`【テスト送信】${respondentName} さんが承諾しました！`);
+                setTimeout(renderSuccessScreen, 1000);
+            }
+        }
+
+        // 4. 完了（ネタバラシ）画面
+        function renderSuccessScreen() {
+            const container = document.getElementById('app-container');
+            container.innerHTML = `
+                <div class="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center fade-in border-4 border-pink-200">
+                    <div class="text-6xl mb-4">🎉</div>
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 whitespace-pre-wrap leading-relaxed">${escapeHTML(config.successMessage)}</h2>
+                    <p class="text-sm text-gray-400 mt-6">※あなたの回答は送信されました🤫</p>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // 管理画面フロー
+        // ==========================================
+        function requestAdminAccess() {
+            const pass = prompt("管理パスワードを入力してください:");
+            if (pass === ADMIN_PASSWORD) {
+                renderAdminScreen();
+            } else if (pass !== null) {
+                alert("パスワードが間違っています。");
+                window.location.href = window.location.pathname; // 通常画面に戻す
+            }
+        }
+
+        function renderAdminScreen() {
+            const container = document.getElementById('app-container');
+            container.innerHTML = `
+                <div class="bg-white p-6 md:p-8 rounded-xl shadow-md w-full max-w-2xl overflow-y-auto max-h-[90vh]">
+                    <div class="flex justify-between items-center mb-6 border-b pb-4">
+                        <h2 class="text-2xl font-bold text-gray-800"><i class="fa-solid fa-gear mr-2 text-pink-500"></i>設定画面</h2>
+                        <button onclick="copyShareURL()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded shadow text-sm">
+                            <i class="fa-solid fa-link mr-1"></i>URLをコピー
+                        </button>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block font-bold text-sm mb-1">質問文（画面中央に表示）</label>
+                            <textarea id="conf-question" class="w-full border-2 border-gray-200 rounded p-2 focus:border-pink-500 outline-none h-20">${escapeHTML(config.question)}</textarea>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block font-bold text-sm mb-1">承諾ボタンのテキスト</label>
+                                <input type="text" id="conf-yes" class="w-full border-2 border-gray-200 rounded p-2 focus:border-pink-500 outline-none" value="${escapeHTML(config.yesText)}">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-sm mb-1">拒否ボタンのテキスト</label>
+                                <input type="text" id="conf-no" class="w-full border-2 border-gray-200 rounded p-2 focus:border-pink-500 outline-none" value="${escapeHTML(config.noText)}">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-sm mb-1">お礼メッセージ（承諾後に表示）</label>
+                            <textarea id="conf-success" class="w-full border-2 border-gray-200 rounded p-2 focus:border-pink-500 outline-none h-20">${escapeHTML(config.successMessage)}</textarea>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded border">
+                            <label class="block font-bold text-sm mb-1">Formspree 送信時の件名</label>
+                            <p class="text-xs text-gray-500 mb-2">※ {name} の部分は入力された名前に置き換わります。</p>
+                            <input type="text" id="conf-subject" class="w-full border-2 border-gray-200 rounded p-2 focus:border-pink-500 outline-none" value="${escapeHTML(config.emailSubject)}">
+                        </div>
+                    </div>
+
+                    <div class="mt-8 flex justify-center gap-4">
+                        <button onclick="syncAndSaveConfig()" class="bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 px-8 rounded shadow-lg">
+                            設定を保存する
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function syncAndSaveConfig() {
+            config.question = document.getElementById('conf-question').value;
+            config.yesText = document.getElementById('conf-yes').value;
+            config.noText = document.getElementById('conf-no').value;
+            config.successMessage = document.getElementById('conf-success').value;
+            config.emailSubject = document.getElementById('conf-subject').value;
+            saveConfig();
+        }
+
+        function copyShareURL() {
+            // URLからクエリパラメータを除いたものを共有URLとする
+            const url = window.location.origin + window.location.pathname;
+            navigator.clipboard.writeText(url).then(() => {
+                alert("お友達に送るURLをコピーしました！\n" + url);
+            });
+        }
+
+        // ユーティリティ: XSS対策
+        function escapeHTML(str) {
+            if (!str) return "";
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag])
+            );
+        }
+
+        // アプリ起動
+        window.onload = init;
+    </script>
+</body>
+</html>
